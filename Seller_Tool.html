@@ -106,7 +106,11 @@
         th.pb-th.dragging { opacity:.4; }
         th.pb-th.pc-left { box-shadow:inset 4px 0 0 0 #F59E0B; }
         th.pb-th.pc-right { box-shadow:inset -4px 0 0 0 #F59E0B; }
-        .pb-sub { font-size:10px; font-weight:500; color:var(--muted); margin-top:3px; white-space:nowrap; }
+        th.pb-th { position:sticky; }
+        .pb-tip { display:none; position:absolute; top:calc(100% + 4px); left:50%; transform:translateX(-50%); z-index:300; background:#111827; color:#fff; font-size:12px; font-weight:500; line-height:1.5; padding:6px 10px; border-radius:6px; white-space:nowrap; pointer-events:none; box-shadow:0 4px 12px rgba(0,0,0,.25); text-align:left; }
+        th.pb-th:hover .pb-tip { display:block; }
+        th.pb-th.dragging .pb-tip { display:none; }
+        th.pb-th:last-child .pb-tip { left:auto; right:0; transform:none; }
         .pb-sort { margin-left:5px; font-size:10px; color:#C4C7CE; }
         .pb-sort.on { color:var(--primary); font-size:11px; }
 
@@ -173,7 +177,7 @@ License: MIT
 <body>
 
     <div class="header">
-        <h1 class="title">✨ Ads Optimizer <span style="font-size:11px; font-weight:500; color:var(--muted);">v1.22 · 2026-10-26</span></h1>
+        <h1 class="title">✨ Ads Optimizer <span style="font-size:11px; font-weight:500; color:var(--muted);">v1.23 · 2026-10-26</span></h1>
         <div class="tab-group">
             <button class="tab-btn active" id="tab-sku" onclick="app_switchTab('sku')">📦 SKU 诊断模式</button>
             <button class="tab-btn" id="tab-kw" onclick="app_switchTab('kw')">🔑 Keyword 诊断模式</button>
@@ -1524,12 +1528,12 @@ License: MIT
             pivot_visible(p).forEach(k => {
                 const th = document.createElement('th');
                 const dsc = pivot_desc(p, k);
-                th.className = 'pb-th'; th.draggable = true; th.dataset.col = k; th.title = dsc[1] + '\n点击排序 · 左右拖动可调整列顺序';
+                th.className = 'pb-th'; th.draggable = true; th.dataset.col = k;
                 const l1 = document.createElement('div');
                 l1.appendChild(document.createTextNode(PIVOT_COLS[k]));
                 const ar = document.createElement('span'); ar.className = 'pb-sort' + (c.sk === k ? ' on' : '');
                 ar.textContent = c.sk === k ? (c.sd === 'asc' ? '▲' : '▼') : '↕'; l1.appendChild(ar);
-                const l2 = document.createElement('div'); l2.className = 'pb-sub'; l2.textContent = dsc[0];
+                const l2 = document.createElement('div'); l2.className = 'pb-tip'; l2.textContent = dsc[1];   // 只在鼠标悬停时显示
                 th.appendChild(l1); th.appendChild(l2);
                 th.addEventListener('click', () => {
                     if (c.sk === k) c.sd = c.sd === 'asc' ? 'desc' : 'asc'; else { c.sk = k; c.sd = 'desc'; }
