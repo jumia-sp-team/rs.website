@@ -177,7 +177,7 @@ License: MIT
 <body>
 
     <div class="header">
-        <h1 class="title">✨ Ads Optimizer <span style="font-size:11px; font-weight:500; color:var(--muted);">v1.23 · 2026-10-26</span></h1>
+        <h1 class="title">✨ Ads Optimizer <span style="font-size:11px; font-weight:500; color:var(--muted);">v1.26 · 2026-10-29</span></h1>
         <div class="tab-group">
             <button class="tab-btn active" id="tab-sku" onclick="app_switchTab('sku')">📦 SKU 诊断模式</button>
             <button class="tab-btn" id="tab-kw" onclick="app_switchTab('kw')">🔑 Keyword 诊断模式</button>
@@ -455,7 +455,8 @@ License: MIT
             kwRoasMinSpend: 2,        // 关键词 ROAS 榜单：花费须大于此值
             minWeeks: 2,              // 诊断所需最少周数
             catFocusShare: 0.05,      // 类目总览：花费占比达到此值且 ROAS 明显偏低 = 重点关注
-            catLowX: 0.7              // 类目总览：ROAS 低于整体均值 × 此倍数 = 明显偏低
+            catLowX: 0.7,             // 类目总览：ROAS 低于整体均值 × 此倍数 = 明显偏低
+            cpcHighX: 1.2             // 关键词诊断：CPC ≥ 整体平均 CPC × 此倍数 = 出价偏高
         };
 
         const utils = {
@@ -539,8 +540,8 @@ License: MIT
                 let res = [];
                 for(let k in grps) {
                     let g = grps[k];
-                    let node = { name:k, dim:dim, lvl:lvl, spend:0, sales:0, orders:0, direct:0, clicks:0, impr:0, conv:0, children: utils.buildTree(g, dims, lvl+1) };
-                    g.forEach(r => { node.spend+=r.spend; node.sales+=r.sales; node.orders+=r.orders; node.direct+=(r.direct||0); node.clicks+=r.clicks; node.impr+=r.impr; node.conv+=r.conv; });
+                    let node = { name:k, dim:dim, lvl:lvl, spend:0, sales:0, orders:0, direct:0, dsales:0, dconv:0, clicks:0, impr:0, conv:0, children: utils.buildTree(g, dims, lvl+1) };
+                    g.forEach(r => { node.spend+=r.spend; node.sales+=r.sales; node.orders+=r.orders; node.direct+=(r.direct||0); node.dsales+=(r.dsales||0); node.dconv+=(r.dconv||0); node.clicks+=r.clicks; node.impr+=r.impr; node.conv+=r.conv; });
                     node.indirect = node.orders - node.direct;
                     if (dim === 'sku') { const t = g.find(r => r.title); node.title = t ? t.title : ''; }
                     node.cpc = node.clicks > 0 ? node.spend / node.clicks : 0;
@@ -655,6 +656,12 @@ License: MIT
                 const spec = [['cat', 'M', 'Product Category', /categ/i], ['conv', 'R', 'Conversions', /conver/i], ['orders', 'S', 'Orders', /^(?!.*direct).*order/i], ['direct', 'V', 'Direct Orders', /direct/i]];
                 st.posInfo = spec.map(([k, letter, meaning, re]) => { const h = st.headers[cfg.pos[k]]; return { letter, meaning, header: h === undefined ? '' : h, ok: re.test(h || '') }; });
             }
+            st.isSku = !!cfg.pos;
+            // 关键词报表按列位置读取：M=Direct Conversions，N=Direct Orders，O=Direct Sales
+            if (cfg.posD) {
+                const specD = [['dconv', 'M', 'Direct Conversions', /direct.*conver|conver.*direct/i], ['direct', 'N', 'Direct Orders', /direct.*order|order.*direct/i], ['dsales', 'O', 'Direct Sales', /direct.*sale|sale.*direct/i]];
+                st.posInfo = (st.posInfo || []).concat(specD.map(([k, letter, meaning, re]) => { const h = st.headers[cfg.posD[k]]; return { letter, meaning, header: h === undefined ? '' : h, ok: re.test(h || '') }; }));
+            }
             // SKU 标题列：按表头名自动识别（Title / Product Title / Product Name / 商品标题 等）
             let titleIdx = -1;
             if (cfg.pos) {
@@ -697,13 +704,14 @@ License: MIT
                 let ttl = titleIdx >= 0 ? String(posVal(r, titleIdx) === undefined || posVal(r, titleIdx) === null ? '' : posVal(r, titleIdx)).trim() : '';
                 let day = `${pd.y}-${String(pd.m).padStart(2, '0')}-${String(pd.d).padStart(2, '0')}`;
                 let key = `${wk}|${day}|${camp}|${adg}|${cat}|${name}`;
-                if (!map.has(key)) { let o = { wk, day, camp, adg, cat, title: '', impr: 0, clicks: 0, spend: 0, sales: 0, orders: 0, direct: 0, conv: 0 }; o[cfg.nameKey] = name; map.set(key, o); }
+                if (!map.has(key)) { let o = { wk, day, camp, adg, cat, title: '', impr: 0, clicks: 0, spend: 0, sales: 0, orders: 0, direct: 0, dsales: 0, dconv: 0, conv: 0 }; o[cfg.nameKey] = name; map.set(key, o); }
                 let g = map.get(key);
                 if (ttl && !g.title) g.title = ttl;
                 g.impr += num(r, cfg.imprCols); g.clicks += num(r, ['Clicks']);
                 g.spend += sp; g.sales += sa;
                 if (cfg.pos) { g.orders += numAt(r, cfg.pos.orders); g.direct += numAt(r, cfg.pos.direct); g.conv += numAt(r, cfg.pos.conv); }
                 else { g.orders += num(r, ['Orders', 'Direct Orders']); g.conv += num(r, cfg.convCols); }
+                if (cfg.posD) { g.direct += numAt(r, cfg.posD.direct); g.dsales += numAt(r, cfg.posD.dsales); g.dconv += numAt(r, cfg.posD.dconv); }
                 st.spend += sp; st.sales += sa; st.loaded++;
             });
             return { rows: Array.from(map.values()), st };
@@ -730,7 +738,7 @@ License: MIT
                 h += `<div>🔎 按列位置读取：${st.posInfo.map(x => `${x.letter}列（${x.meaning}）= 「${utils.esc(x.header || '（空）')}」`).join('；')}</div>`;
                 if (posBad.length) h += `<div style="color:#B91C1C;">❗ ${posBad.map(x => `${x.letter}列的表头是「${utils.esc(x.header || '（空）')}」，看起来不是 ${x.meaning}`).join('；')}。请确认数据源的列位置没有变动，否则对应数字会是错的。</div>`;
             }
-            if (st.posInfo) h += st.titleHeader ? `<div>🏷️ SKU 标题：读取自「${utils.esc(st.titleHeader)}」列</div>` : `<div style="color:var(--muted);">🏷️ 没有找到 SKU 标题列（表头需为 Title / Product Title / Product Name 等），透视表里暂不显示标题。</div>`;
+            if (st.posInfo && st.isSku) h += st.titleHeader ? `<div>🏷️ SKU 标题：读取自「${utils.esc(st.titleHeader)}」列</div>` : `<div style="color:var(--muted);">🏷️ 没有找到 SKU 标题列（表头需为 Title / Product Title / Product Name 等），透视表里暂不显示标题。</div>`;
             h += `<div>📅 日期范围：<b>${fd(st.minD)} ~ ${fd(st.maxD)}</b>（「周」为 ISO 周，周一至周日）</div>`;
             const el = document.getElementById(id);
             el.innerHTML = h;
@@ -1128,7 +1136,7 @@ License: MIT
         });
 
         function kw_processData(data, meta) {
-            const { rows, st } = app_buildRows(data, { nameCols: ['Keyword', 'Target'], nameKey: 'kw', imprCols: ['Impresisons', 'Impressions'], convCols: ['Conversions', 'Direct Conversions'] }, meta);
+            const { rows, st } = app_buildRows(data, { nameCols: ['Keyword', 'Target'], nameKey: 'kw', imprCols: ['Impresisons', 'Impressions'], convCols: ['Conversions', 'Direct Conversions'], posD: { dconv: 12, direct: 13, dsales: 14 } }, meta);
             kw_raw = rows;
             if(kw_raw.length===0) { app_alert(app_emptyMsg(st, 'Keyword')); app_resetUpload('kw-upload'); return; }
 
@@ -1248,7 +1256,7 @@ License: MIT
             let topSpSet = new Set([...kwList].sort((a,b)=>b.spend-a.spend).slice(0,10).map(x=>x.kw));
             let topConvSet = new Set([...kwList].sort((a,b)=>b.conv-a.conv).slice(0,10).map(x=>x.kw));
 
-            let dMap = new Map(); let kwAgg = new Map(); let tSp=0, tSa=0;
+            let dMap = new Map(); let kwAgg = new Map(); let tSp=0, tSa=0, tCl=0;
             curData.forEach(r => {
                 let key = `${r.camp}|${r.adg}|${r.kw}`;
                 if(!dMap.has(key)) dMap.set(key, {camp:r.camp, adg:r.adg, kw:r.kw, spend:0, sales:0, orders:0, clicks:0, impr:0, conv:0});
@@ -1257,9 +1265,10 @@ License: MIT
                 
                 if(!kwAgg.has(r.camp)) kwAgg.set(r.camp, new Map());
                 let campKw = kwAgg.get(r.camp); campKw.set(r.kw, (campKw.get(r.kw)||0)+r.clicks);
-                tSp+=r.spend; tSa+=r.sales;
+                tSp+=r.spend; tSa+=r.sales; tCl+=r.clicks;
             });
             let avgR = tSp>0?tSa/tSp:0;
+            let avgCpc = tCl>0 ? tSp/tCl : 0;   // 范围内平均 CPC，用来判断「出价偏高」
 
             let campCoreKw = {};
             kwAgg.forEach((kwMap, cName) => {
@@ -1290,8 +1299,9 @@ License: MIT
                 }
 
                 let isBad = false;
+                let isLoss = false;   // 真亏损：点击够多，并且 0 单 / ACOS 超标 / ROAS 不及格
                 if(g.clicks >= minC) {
-                    if (g.orders === 0 || g.acos >= minA || g.roas <= maxR) isBad = true;
+                    if (g.orders === 0 || g.acos >= minA || g.roas <= maxR) { isBad = true; isLoss = true; }
                 }
 
                 // 刺客判定
@@ -1306,9 +1316,13 @@ License: MIT
                         g.err = `跑偏 0 单`; g.act = '直接精否'; 
                         buckets.negKw.push(g); 
                     } else {
-                        if(g.ctr < RULES.ctrMin) { g.err = `点击意愿低`; g.act = '优化主图/售价'; }
+                        // 先看「出价」：真亏损，并且实际 CPC 明显高于整体平均 → 出价偏高。
+                        // 只有 CPC 高、但回报 / 点击率 / 转化率都正常的词，不算问题，不在这里标出
+                        if(isLoss && g.clicks >= minC && avgCpc > 0 && g.cpc >= avgCpc * RULES.cpcHighX) { g.err = `出价偏高`; g.act = '降价/建新组'; }
+                        else if(g.ctr < RULES.ctrMin) { g.err = `点击意愿低`; g.act = '优化主图/售价'; }
                         else if(g.cvr <= RULES.cvrMax) { g.err = `转化流失`; g.act = '优化详情页/A+'; }
-                        else { g.err = `点击过贵`; g.act = '降价/建新组'; }
+                        else if(isLoss) { g.err = `ROAS 未达标`; g.act = '流量和转化都正常，观察 1～2 周；可小幅降价或优化价格'; }
+                        else { return; }   // 只是花费大、但点击率 / 转化率 / CPC / ROAS 都正常的词：视为正常词，不列入问题
                         buckets.optKw.push(g);
                     }
                 }
@@ -1398,9 +1412,9 @@ License: MIT
             sku: [{v:'camp', t:'Campaign', i:'🎯'}, {v:'adg', t:'Ad Group', i:'🗂️'}, {v:'cat', t:'Product Category', i:'🏷️'}, {v:'sku', t:'SKU', i:'📦'}, {v:'wk', t:'Week', i:'📅'}, {v:'day', t:'Day', i:'📆'}],
             kw:  [{v:'camp', t:'Campaign', i:'🎯'}, {v:'adg', t:'Ad Group', i:'🗂️'}, {v:'kw', t:'Keyword', i:'🔑'}, {v:'wk', t:'Week', i:'📅'}, {v:'day', t:'Day', i:'📆'}]
         };
-        const PIVOT_COLS = { spend:'Spend', sales:'Sales', orders:'Orders', direct:'Direct Orders', indirect:'Indirect Orders', impr:'Impressions', clicks:'Clicks', cpc:'CPC', cpa:'CPA', aiv:'AIV', conv:'Conversions', roas:'ROAS', acos:'ACOS', ctr:'CTR', cvr:'CVR' };
-        const PIVOT_BASE = ['spend', 'sales', 'orders', 'impr', 'clicks', 'roas', 'acos', 'ctr', 'cvr'];   // Keyword 页面：基础列
-        const PIVOT_ALL = Object.keys(PIVOT_COLS);                                                  // SKU 页面：全部列
+        const PIVOT_COLS = { spend:'Spend', sales:'Sales', dsales:'Direct Sales', orders:'Orders', direct:'Direct Orders', indirect:'Indirect Orders', dconv:'Direct Conversions', impr:'Impressions', clicks:'Clicks', cpc:'CPC', cpa:'CPA', aiv:'AIV', conv:'Conversions', roas:'ROAS', acos:'ACOS', ctr:'CTR', cvr:'CVR' };
+        const PIVOT_BASE = ['spend', 'sales', 'dsales', 'orders', 'direct', 'indirect', 'impr', 'clicks', 'dconv', 'roas', 'acos', 'ctr', 'cvr'];   // Keyword 页面：基础列
+        const PIVOT_ALL = ['spend', 'sales', 'orders', 'direct', 'indirect', 'impr', 'clicks', 'cpc', 'cpa', 'aiv', 'conv', 'roas', 'acos', 'ctr', 'cvr'];                                                 // SKU 页面：全部列
         // cols: 当前列顺序；sk/sd: 排序列与方向（非 Week 层级）；wk: Week 层级的时间方向（desc = 新→旧）
         // 默认隐藏的列（仍可在「显示哪些列」里勾选）
         const PIVOT_DEFAULT_HIDDEN = { sku: ['indirect', 'cpa', 'aiv'], kw: [] };
@@ -1410,6 +1424,8 @@ License: MIT
             sales:    ['广告销售额', '广告销售额（Sales）'],
             orders:   ['订单数', '订单数（Orders）'],
             direct:   ['直接订单数', '直接订单数（Direct Orders）'],
+            dsales:   ['直接销售额', '直接销售额（Direct Sales）'],
+            dconv:    ['直接转化数', '直接转化数（Direct Conversions）'],
             indirect: ['Orders − Direct Orders', '间接订单数 = 订单数 − 直接订单数'],
             impr:     ['曝光量', '曝光量（Impressions）'],
             clicks:   ['点击量', '点击量（Clicks）'],
@@ -1428,6 +1444,11 @@ License: MIT
                 if (k === 'orders') { d[0] = '订单数（S 列）'; d[1] = '订单数，读取源报表 S 列'; }
                 if (k === 'direct') { d[0] = '直接订单数（V 列）'; d[1] = '直接订单数，读取源报表 V 列'; }
                 if (k === 'conv')   { d[0] = '转化数（R 列）'; d[1] = '转化数，读取源报表 R 列'; }
+            }
+            if (p === 'kw') {   // Keyword 页面这三列按源报表的列位置读取
+                if (k === 'direct') { d[0] = '直接订单数（N 列）'; d[1] = '直接订单数，读取源报表 N 列。间接订单数 = 订单数 − 直接订单数'; }
+                if (k === 'dsales') { d[0] = '直接销售额（O 列）'; d[1] = '直接销售额，读取源报表 O 列'; }
+                if (k === 'dconv')  { d[0] = '直接转化数（M 列）'; d[1] = '直接转化数，读取源报表 M 列'; }
             }
             return d;
         };
@@ -1485,6 +1506,8 @@ License: MIT
                 case 'impr': return `<td>${utils.fmtI(n.impr)}</td>`;
                 case 'clicks': return `<td>${utils.fmtI(n.clicks)}</td>`;
                 case 'direct': return `<td>${utils.fmtI(n.direct)}</td>`;
+                case 'dsales': return `<td>${utils.fmtM(n.dsales)}</td>`;
+                case 'dconv': return `<td>${utils.fmtI(n.dconv)}</td>`;
                 case 'indirect': return `<td>${utils.fmtI(n.indirect)}</td>`;
                 case 'conv': return `<td>${utils.fmtI(n.conv)}</td>`;
                 case 'cpc': return `<td>${utils.fmtM(n.cpc)}</td>`;
